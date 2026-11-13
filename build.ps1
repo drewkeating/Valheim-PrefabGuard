@@ -31,7 +31,7 @@ if (-not $Csc) {
 
 $refs = @(
     "$managed\mscorlib.dll", "$managed\netstandard.dll", "$managed\System.dll", "$managed\System.Core.dll",
-    "$managed\UnityEngine.dll", "$managed\UnityEngine.CoreModule.dll",
+    "$managed\UnityEngine.dll", "$managed\UnityEngine.CoreModule.dll", "$managed\UnityEngine.UI.dll",
     "$managed\assembly_valheim.dll", "$managed\assembly_utils.dll", "$managed\assembly_guiutils.dll",
     (Join-Path $BepInExDir 'core\BepInEx.dll'), (Join-Path $BepInExDir 'core\0Harmony.dll'), $jotunn.FullName
 )
