@@ -16,7 +16,7 @@ using UnityEngine;
 // client checks each one against its own ZNetScene before the world can be simulated.
 namespace PrefabGuard
 {
-    [BepInPlugin(Id, "PrefabGuard", "1.1.0")]
+    [BepInPlugin(Id, "PrefabGuard", "1.1.1")]
     [BepInDependency(Jotunn.Main.ModGuid)]
     [NetworkCompatibility(CompatibilityLevel.EveryoneMustHaveMod, VersionStrictness.Minor)]
     public class PrefabGuardPlugin : BaseUnityPlugin
@@ -721,19 +721,10 @@ namespace PrefabGuard
             ourButtons.Clear(); ourButtonActions.Clear();
         }
 
-        // Starts a program with one argument (the file), without a shell. Returns false if it could not be started.
-        static bool TryStart(string program, string argument)
-        {
-            try
-            {
-                var psi = new System.Diagnostics.ProcessStartInfo(program, "\"" + argument + "\"") { UseShellExecute = false, CreateNoWindow = true };
-                return System.Diagnostics.Process.Start(psi) != null;
-            }
-            catch { return false; }
-        }
-
-        // Opens the report in the system's default program: the shell on Windows, xdg-open on Linux, open on macOS.
-        // If that fails, tries the game's own file-link opener with a proper file:// address.
+        // Opens the report in the system's default program, using the game's own link opener (Unity's Application.OpenURL),
+        // which hands the address to the operating system. PrefabGuard doesn't start any program itself.
+        // Windows: the plain file path (tested). Linux and macOS: a file:// address, which is what Unity users report
+        // working on macOS where a plain path didn't (not tested here, and not documented by Unity).
         static void OpenReport()
         {
             // Enter or A can reach this twice (the game's own button handling and ours), so ignore a second call.
@@ -741,24 +732,12 @@ namespace PrefabGuard
             lastOpenTime = Time.unscaledTime;
             if (reportPath == null || !File.Exists(reportPath)) return;
 
-            bool opened = false;
             try
             {
                 var platform = Application.platform;
-                if (platform == RuntimePlatform.LinuxPlayer || platform == RuntimePlatform.LinuxEditor)
-                    opened = TryStart("xdg-open", reportPath);
-                else if (platform == RuntimePlatform.OSXPlayer || platform == RuntimePlatform.OSXEditor)
-                    opened = TryStart("open", reportPath);
-                else
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo(reportPath) { UseShellExecute = true };
-                    opened = System.Diagnostics.Process.Start(psi) != null;
-                }
+                bool windows = platform == RuntimePlatform.WindowsPlayer || platform == RuntimePlatform.WindowsEditor;
+                Application.OpenURL(windows ? reportPath : new Uri(reportPath).AbsoluteUri);
             }
-            catch (Exception e) { Instance.Logger.LogWarning("[PrefabGuard] Could not open the report with the default program (" + e.Message + ")."); }
-            if (opened) return;
-
-            try { Application.OpenURL(new Uri(reportPath).AbsoluteUri); }
             catch (Exception e) { Instance.Logger.LogWarning("[PrefabGuard] Could not open the report: " + e.Message); }
         }
 

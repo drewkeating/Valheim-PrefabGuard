@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.1
+- "Open report" now opens the report file with the game's own link opener, and PrefabGuard no longer starts any program itself (1.1.0 ran `xdg-open` and `open` on Linux and macOS and used the Windows shell directly). On Windows it passes the plain file path (tested); on Linux and macOS it passes a `file://` address. Not tested on Linux or macOS, and the game's link opener isn't documented for local files there; if the button does nothing, the message box and the report file still work. Nothing else changed, and 1.1.1 works with 1.1.0 and the other way round (Jotunn compares only the major and minor numbers).
+
 ## 1.1.0
 
 Everyone (every client and the server) must update to 1.1.0. The minor version changed on purpose: Jotunn refuses to connect a 1.0.x client to a 1.1.x server, and the other way round, so nobody is left on a blank "Failed to connect" screen.
