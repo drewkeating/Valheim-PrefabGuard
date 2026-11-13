@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2
+- The server now re-reads its config file too: when it sends the prefab list (`IgnorePrefabs`, `GraceSeconds`), when it handles a client's answer (`Enforce`), and when a client runs out of time. A change to the server's config applies to the next join without restarting the server. Re-reading doesn't rewrite the file.
+- `IgnorePrefabs` now defaults to the 12 terrain tool prefabs of AdvancedTerrainModifiers (`mud_road_v2_sq`, `raise_v2_precise`, `lower_v2`, `path_v2_square`, `paved_road_v2_square`, `paved_road_v2_path`, `paved_road_v2_path_square`, `remove_terrain_mods`, `cultivate_v2_square`, `cultivate_v2_path`, `cultivate_v2_path_square`, `replant_v2_square`). AdvancedTerrainModifiers registers them only on the first world load in a game session, so a client that loads a world a second time lacks them (its tools still work) and was refused. Existing config files keep their saved value: add the names to your server's `IgnorePrefabs` if you run that mod.
+- Testing only, under [Debug]: the new `RecheckMissingLater` (off by default) looks for missing prefabs again after 2, 5, 10, 20, 40 and 60 seconds and writes to the log when they show up. It only helps if Enforce is off on both the client and the server.
+- 1.1.2 works with 1.1.0 and 1.1.1 and the other way round (Jotunn compares only the major and minor numbers), but the server only gets the live config re-read once it runs 1.1.2.
+
 ## 1.1.1
 - "Open report" now opens the report file with the game's own link opener, and PrefabGuard no longer starts any program itself (1.1.0 ran `xdg-open` and `open` on Linux and macOS and used the Windows shell directly). On Windows it passes the plain file path (tested); on Linux and macOS it passes a `file://` address. Not tested on Linux or macOS, and the game's link opener isn't documented for local files there; if the button does nothing, the message box and the report file still work. Nothing else changed, and 1.1.1 works with 1.1.0 and the other way round (Jotunn compares only the major and minor numbers).
 

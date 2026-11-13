@@ -16,7 +16,7 @@ using UnityEngine;
 // client checks each one against its own ZNetScene before the world can be simulated.
 namespace PrefabGuard
 {
-    [BepInPlugin(Id, "PrefabGuard", "1.1.1")]
+    [BepInPlugin(Id, "PrefabGuard", "1.1.2")]
     [BepInDependency(Jotunn.Main.ModGuid)]
     [NetworkCompatibility(CompatibilityLevel.EveryoneMustHaveMod, VersionStrictness.Minor)]
     public class PrefabGuardPlugin : BaseUnityPlugin
@@ -30,8 +30,11 @@ namespace PrefabGuard
         internal static ConfigEntry<bool> Enforce;
         internal static ConfigEntry<float> GraceSeconds;
         internal static ConfigEntry<string> IgnorePrefabs;
+        // The 12 terrain tool prefabs of AdvancedTerrainModifiers, which only registers them on the first world load of a game session.
+        const string DefaultIgnorePrefabs = "mud_road_v2_sq,raise_v2_precise,lower_v2,path_v2_square,paved_road_v2_square,paved_road_v2_path,paved_road_v2_path_square,remove_terrain_mods,cultivate_v2_square,cultivate_v2_path,cultivate_v2_path_square,replant_v2_square";
         internal static ConfigEntry<string> DebugPretendMissingPrefabs;
         internal static ConfigEntry<bool> DebugForceVanillaMessageBox;
+        internal static ConfigEntry<bool> DebugRecheckMissingLater;
         internal static ConfigEntry<float> MessageBoxWidthFactor;
         internal static ConfigEntry<float> MessageBoxTextSizeFactor;
 
@@ -70,13 +73,13 @@ namespace PrefabGuard
                     "Raise this if players on slow computers are disconnected while the game is still loading.\n" +
                     "Values outside the allowed range are moved to the nearest limit, so a client can never be disconnected before it has had time to answer.",
                     new AcceptableValueRange<float>(MinGraceSeconds, MaxGraceSeconds)));
-            IgnorePrefabs = Config.Bind("General", "IgnorePrefabs", "",
+            IgnorePrefabs = Config.Bind("General", "IgnorePrefabs", DefaultIgnorePrefabs,
                 "Server only. Prefabs that clients are allowed to lack. Every other missing prefab gets the client refused.\n" +
                 "Separate names with commas. A name must match exactly, including capital letters.\n" +
-                "Example: rae_Ashwood_big_roof_top ignores that one prefab (a roof piece from OdinArchitect).\n" +
-                "A * stands for any text. Example: rae_Ashwood_big_roof_* ignores every prefab that starts with rae_Ashwood_big_roof_, such as rae_Ashwood_big_roof_top and rae_Ashwood_big_roof_icorner_46.\n" +
+                "A * stands for any text. Example: paved_road_v2_* covers paved_road_v2_square, paved_road_v2_path and paved_road_v2_path_square.\n" +
                 "An entry that is only * is skipped, because it would switch the check off.\n" +
-                "Leave this empty unless you have a reason.");
+                "Why the default list is filled in: its 12 names are the terrain tools of the mod AdvancedTerrainModifiers. That mod registers them with the game only the first time a world loads in a game session. On a second world load in the same session a client lacks them, although the tools still work, and without this list PrefabGuard would refuse a client that is fine.\n" +
+                "Keep them if the server runs AdvancedTerrainModifiers. Leave the rest of the list as it is unless you have a reason.");
             MessageBoxWidthFactor = Config.Bind("General", "MessageBoxWidthFactor", 1.75f,
                 new ConfigDescription("Client only. How much wider to make PrefabGuard's message box than the game's normal message box.\n" +
                     "1 = normal width, 1.75 = three quarters wider, 2 = twice as wide. Only PrefabGuard's message box is changed. The box is never wider than the screen allows.\n" +
@@ -97,6 +100,9 @@ namespace PrefabGuard
             DebugForceVanillaMessageBox = Config.Bind("Debug", "ForceVanillaMessageBox", false,
                 "Testing only, leave false. true: PrefabGuard shows the game's own plain, one-button message box instead of its own.\n" +
                 "That plain box is what PrefabGuard falls back to if it can't build its own, so this lets you see it. It has no Open report button.");
+            DebugRecheckMissingLater = Config.Bind("Debug", "RecheckMissingLater", false,
+                "Testing only, leave false. true: when prefabs are missing, keep looking for them for about a minute and write to the log when they show up, and whether your player has spawned by then.\n" +
+                "Only useful when Enforce is false on this client AND on the server; otherwise you are disconnected before anything can show up.");
             new Harmony(Id).PatchAll(typeof(PrefabGuardPlugin).Assembly);
             Logger.LogInfo("PrefabGuard loaded. Enforce=" + Enforce.Value);
         }
@@ -146,9 +152,42 @@ namespace PrefabGuard
             if (znet == null) { ShowPopup(); TickPopup(); return; }
 
             if (znet.IsServer()) ServerTick(znet);
-            else ClientTick();
+            else { ClientTick(); RecheckTick(); }
             ShowPopup();
             TickPopup();
+        }
+
+        // ---- Testing aid: do the missing prefabs show up later? ----
+        // With [Debug] RecheckMissingLater on, after a check that found missing prefabs the client looks for them again at
+        // a few set times and logs how many are present, and whether the local player has spawned. Writes to the log only.
+        static readonly float[] RecheckAfterSeconds = { 2f, 5f, 10f, 20f, 40f, 60f };
+        static List<string> recheckNames;
+        static float recheckStart;
+        static int recheckNext;
+
+        static void StartRecheck(List<string> missing)
+        {
+            recheckNames = new List<string>(missing);
+            recheckStart = Time.realtimeSinceStartup;
+            recheckNext = 0;
+            Instance.Logger.LogInfo("[PrefabGuard] Recheck: will look for the " + missing.Count + " missing prefabs again after " +
+                string.Join(", ", RecheckAfterSeconds.Select(x => x.ToString("0") + "s").ToArray()) + ".");
+        }
+
+        static void RecheckTick()
+        {
+            if (recheckNames == null) return;
+            if (ZNetScene.instance == null) { recheckNames = null; return; } // left the world
+            if (recheckNext >= RecheckAfterSeconds.Length) { recheckNames = null; return; }
+            float elapsed = Time.realtimeSinceStartup - recheckStart;
+            if (elapsed < RecheckAfterSeconds[recheckNext]) return;
+
+            var present = recheckNames.Where(n => ZNetScene.instance.GetPrefab(n) != null).ToList();
+            Instance.Logger.LogInfo("[PrefabGuard] Recheck +" + RecheckAfterSeconds[recheckNext].ToString("0") + "s (" + elapsed.ToString("0.0") + "s): " +
+                present.Count + " of " + recheckNames.Count + " are now in the game's prefab list" +
+                (present.Count > 0 ? " (" + string.Join(", ", present.Take(12).ToArray()) + ")" : "") +
+                "; player spawned: " + (Player.m_localPlayer != null));
+            recheckNext++;
         }
 
         // ---------------- server ----------------
@@ -186,6 +225,7 @@ namespace PrefabGuard
                 if (peer == null) { Waiting.Remove(uid); continue; }
                 if (Time.realtimeSinceStartup - Waiting[uid] < Grace()) continue;
                 Waiting.Remove(uid);
+                ReloadConfig(); // only when a client has run out of time, not every frame
                 Instance.Logger.LogWarning("[PrefabGuard] " + peer.m_playerName + " (" + uid + ") never answered the prefab check. " +
                     (Enforce.Value ? "Kicking." : "Enforce is off, allowing."));
                 if (Enforce.Value) znet.Disconnect(peer);
@@ -195,6 +235,7 @@ namespace PrefabGuard
         internal static void SendNames(ZNet znet, ZNetPeer peer)
         {
             if (ZNetScene.instance == null || peer == null) return;
+            ReloadConfig(); // picks up edits to IgnorePrefabs and GraceSeconds without restarting the server
             var names = ZNetScene.instance.GetPrefabNames().Where(n => !Ignored(n)).ToList();
             var pkg = new ZPackage();
             pkg.Write(names.Count);
@@ -210,6 +251,7 @@ namespace PrefabGuard
             var peer = znet == null ? null : PeerOf(znet, rpc);
             if (peer == null) return;
             Waiting.Remove(peer.m_uid);
+            ReloadConfig(); // picks up an edit to Enforce without restarting the server
             if (missing <= 0)
             {
                 Instance.Logger.LogInfo("[PrefabGuard] " + peer.m_playerName + " passed (" + missing + " missing).");
@@ -262,6 +304,7 @@ namespace PrefabGuard
             try { rpc.Invoke(RpcAck, new object[] { missing.Count, sample }); } catch { }
 
             if (missing.Count == 0) return;
+            if (DebugRecheckMissingLater.Value) StartRecheck(missing);
             Instance.Logger.LogError("[PrefabGuard] " + missing.Count + " prefabs the server has are missing here: " + string.Join(", ", missing.Take(40).ToArray()));
             if (!Enforce.Value)
             {

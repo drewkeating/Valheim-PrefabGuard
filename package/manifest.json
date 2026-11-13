@@ -1,6 +1,6 @@
 {
     "name": "PrefabGuard",
-    "version_number": "1.1.1",
+    "version_number": "1.1.2",
     "website_url": "https://github.com/drewkeating/Valheim-PrefabGuard",
     "description": "Server-enforced safety check: refuses clients whose mods installed but failed to register their prefabs, before they can damage the world.",
     "dependencies": [
